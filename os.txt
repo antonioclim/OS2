@@ -1,0 +1,4 @@
+1970,Unix,Richie                                                                
+1987,Minix,Tanenbaum                                                            
+1970,Unix,Thompson                                                              
+1991,Linux,Torvalds
