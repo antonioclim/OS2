@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Define paths
+SOURCE_DIR="$HOME/TXT"
+ARCHIVE_FILE="$HOME/my-backup.tgz"
+
+# Check if the source directory exists
+if [ ! -d "$SOURCE_DIR" ]; then
+    echo "Error: Directory $SOURCE_DIR does not exist."
+    exit 1
+fi
+
+# Calculate total size of TXT directory before compression
+TXT_SIZE=$(du -sb "$SOURCE_DIR" | awk '{print $1}')  # Get size in bytes
+echo "Size of $SOURCE_DIR before compression: $TXT_SIZE bytes"
+
+# Create the archive
+tar -czf "$ARCHIVE_FILE" -C "$HOME" TXT
+
+# Check if the archive was created successfully
+if [ $? -eq 0 ]; then
+    echo "Backup created successfully: $ARCHIVE_FILE"
+
+    # Calculate the size of the archive
+    ARCHIVE_SIZE=$(du -b "$ARCHIVE_FILE" | awk '{print $1}')
+    echo "Size of archive ($ARCHIVE_FILE): $ARCHIVE_SIZE bytes"
+else
+    echo "Error: Failed to create archive."
+    exit 1
+fi

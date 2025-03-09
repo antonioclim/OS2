@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# Define paths
+SOURCE_DIR="$HOME/TXT"
+BZIP_ARCHIVE="$HOME/my-backup.tar.bz2"
+XZ_ARCHIVE="$HOME/my-backup.tar.xz"
+ZSTD_ARCHIVE="$HOME/my-backup.tar.zst"
+SEVENZ_ARCHIVE="$HOME/my-backup.7z"
+
+# Check if the required tools are installed; install them if missing
+for tool in bzip2 xz zstd p7zip-full; do
+    if ! command -v $tool &> /dev/null; then
+        echo "$tool is not installed. Installing..."
+        sudo apt update && sudo apt install -y $tool
+    fi
+done
+
+# Ensure the source directory exists
+if [ ! -d "$SOURCE_DIR" ]; then
+    echo "Error: Directory $SOURCE_DIR does not exist."
+    exit 1
+fi
+
+# Get initial size
+TXT_SIZE=$(du -sb "$SOURCE_DIR" | awk '{print $1}')
+echo "Size of $SOURCE_DIR before compression: $TXT_SIZE bytes"
+
+# Compression Methods (Comparing the Results)
+echo "Starting maximum compression attempts..."
+
+# Bzip2 Compression (Maximum Level)
+tar -cjf "$BZIP_ARCHIVE" -C "$HOME" TXT
+BZIP_SIZE=$(du -b "$BZIP_ARCHIVE" | awk '{print $1}')
+echo "Bzip2 archive size: $BZIP_SIZE bytes"
+
+# XZ Compression (Maximum Level)
+tar -cJf "$XZ_ARCHIVE" -C "$HOME" TXT
+XZ_SIZE=$(du -b "$XZ_ARCHIVE" | awk '{print $1}')
+echo "XZ archive size: $XZ_SIZE bytes"
+
+# Zstandard Compression (Maximum Level)
+tar --use-compress-program="zstd -19" -cf "$ZSTD_ARCHIVE" -C "$HOME" TXT
+ZSTD_SIZE=$(du -b "$ZSTD_ARCHIVE" | awk '{print $1}')
+echo "Zstd archive size: $ZSTD_SIZE bytes"
+
+# 7z Compression (Strongest but Slowest)
+7z a -mx=9 "$SEVENZ_ARCHIVE" "$SOURCE_DIR" > /dev/null
+SEVENZ_SIZE=$(du -b "$SEVENZ_ARCHIVE" | awk '{print $1}')
+echo "7z archive size: $SEVENZ_SIZE bytes"
+
+# Determine the smallest archive
+BEST_SIZE=$TXT_SIZE
+BEST_ARCHIVE=""
+
+for archive in "$BZIP_ARCHIVE" "$XZ_ARCHIVE" "$ZSTD_ARCHIVE" "$SEVENZ_ARCHIVE"; do
+    if [ -f "$archive" ]; then
+        SIZE=$(du -b "$archive" | awk '{print $1}')
+        if [[ "$SIZE" -lt "$BEST_SIZE" ]]; then
+            BEST_SIZE=$SIZE
+            BEST_ARCHIVE=$archive
+        fi
+    fi
+done
+
+# Print final result
+echo "Best compression achieved with: $BEST_ARCHIVE ($BEST_SIZE bytes)"
+COMPRESSION_RATIO=$((100 * BEST_SIZE / TXT_SIZE))
+
+# Check if we achieved 20% compression
+if [ "$COMPRESSION_RATIO" -le 20 ]; then
+    echo "Success: Compression is below 20% of original size!"
+else
+    echo "Warning: Could not reach 20% compression. Best result is $COMPRESSION_RATIO%."
+fi
