@@ -1,0 +1,101 @@
+#!/bin/bash
+
+# Define paths
+SOURCE_DIR="$HOME/TXT"
+BZIP_ARCHIVE="$HOME/my-backup.tar.bz2"
+XZ_ARCHIVE="$HOME/my-backup.tar.xz"
+ZSTD_ARCHIVE="$HOME/my-backup.tar.zst"
+SEVENZ_ARCHIVE="$HOME/my-backup.7z"
+LRZIP_ARCHIVE="$HOME/my-backup.tar.lrz"
+BROTLI_ARCHIVE="$HOME/my-backup.tar.br"
+
+# Check and install missing compression tools
+for tool in bzip2 xz zstd p7zip-full lrzip brotli; do
+    if ! command -v $tool &> /dev/null; then
+        echo "$tool is not installed. Installing..."
+        sudo apt update && sudo apt install -y $tool
+    fi
+done
+
+# Ensure the source directory exists
+if [ ! -d "$SOURCE_DIR" ]; then
+    echo "Error: Directory $SOURCE_DIR does not exist."
+    exit 1
+fi
+
+# Get initial size
+TXT_SIZE=$(du -sb "$SOURCE_DIR" | awk '{print $1}')
+echo "Size of $SOURCE_DIR before compression: $TXT_SIZE bytes"
+
+# ==============================
+# **Pre-processing Step**
+# ==============================
+echo "Pre-processing files for better compression..."
+
+# Remove duplicate files before compression
+fdupes -r "$SOURCE_DIR" -dN > /dev/null 2>&1
+
+# Remove hidden files (metadata)
+find "$SOURCE_DIR" -type f -name ".*" -delete
+
+# Convert text files to a single-line format
+find "$SOURCE_DIR" -type f -name "*.txt" -exec sed -i ':a;N;$!ba;s/\n/ /g' {} +
+
+echo "Starting maximum compression attempts..."
+
+# **1. Bzip2 (Maximum Level)**
+tar -cjf "$BZIP_ARCHIVE" -C "$HOME" TXT
+BZIP_SIZE=$(du -b "$BZIP_ARCHIVE" | awk '{print $1}')
+echo "Bzip2 archive size: $BZIP_SIZE bytes"
+
+# **2. XZ (Extreme Mode)**
+tar -cJf "$XZ_ARCHIVE" --xz -C "$HOME" TXT
+XZ_SIZE=$(du -b "$XZ_ARCHIVE" | awk '{print $1}')
+echo "XZ archive size: $XZ_SIZE bytes"
+
+# **3. Zstd (Highest Level)**
+tar --use-compress-program="zstd --ultra -22" -cf "$ZSTD_ARCHIVE" -C "$HOME" TXT
+ZSTD_SIZE=$(du -b "$ZSTD_ARCHIVE" | awk '{print $1}')
+echo "Zstd archive size: $ZSTD_SIZE bytes"
+
+# **4. 7z (Ultra Mode)**
+7z a -mx=9 -mmt=on -m0=lzma2 "$SEVENZ_ARCHIVE" "$SOURCE_DIR" > /dev/null
+SEVENZ_SIZE=$(du -b "$SEVENZ_ARCHIVE" | awk '{print $1}')
+echo "7z archive size: $SEVENZ_SIZE bytes"
+
+# **5. LRZIP (Ultra Compression Mode)**
+tar -cf - "$SOURCE_DIR" | lrzip -U -o "$LRZIP_ARCHIVE"
+LRZIP_SIZE=$(du -b "$LRZIP_ARCHIVE" | awk '{print $1}')
+echo "LRZIP archive size: $LRZIP_SIZE bytes"
+
+# **6. Brotli (For Text-Focused Compression)**
+tar -cf - "$SOURCE_DIR" | brotli -q 11 > "$BROTLI_ARCHIVE"
+BROTLI_SIZE=$(du -b "$BROTLI_ARCHIVE" | awk '{print $1}')
+echo "Brotli archive size: $BROTLI_SIZE bytes"
+
+# ==============================
+# **Finding the Best Compression**
+# ==============================
+BEST_SIZE=$TXT_SIZE
+BEST_ARCHIVE=""
+
+for archive in "$BZIP_ARCHIVE" "$XZ_ARCHIVE" "$ZSTD_ARCHIVE" "$SEVENZ_ARCHIVE" "$LRZIP_ARCHIVE" "$BROTLI_ARCHIVE"; do
+    if [ -f "$archive" ]; then
+        SIZE=$(du -b "$archive" | awk '{print $1}')
+        if [[ "$SIZE" -lt "$BEST_SIZE" ]]; then
+            BEST_SIZE=$SIZE
+            BEST_ARCHIVE=$archive
+        fi
+    fi
+done
+
+# Print final result
+echo "Best compression achieved with: $BEST_ARCHIVE ($BEST_SIZE bytes)"
+COMPRESSION_RATIO=$((100 * BEST_SIZE / TXT_SIZE))
+
+# Check if we reached 20% compression
+if [ "$COMPRESSION_RATIO" -le 20 ]; then
+    echo "Success: Compression is below 20% of original size!"
+else
+    echo "Warning: Could not reach 20% compression. Best result is $COMPRESSION_RATIO%."
+fi
